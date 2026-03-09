@@ -832,6 +832,8 @@ $nav = [
 <?= renderFlash() ?>
 
 <!-- Aquí va el contenido de cada página -->
+<?= $pageContent ?? '' ?>
+
 <?php
 function endLayout(): void {
     global $pageTitle;
