@@ -1,0 +1,4 @@
+<?php
+require_once __DIR__ . '/../../config.php';
+Auth::requireLogin();
+redirect(BASE_URL . '/modules/admin/usuarios.php');
