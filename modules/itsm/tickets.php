@@ -45,10 +45,7 @@ $sql = "SELECT t.*,
         LEFT JOIN itsm_categorias cat ON cat.id  = t.categoria_id
         LEFT JOIN cmdb_ubicaciones ub ON ub.id   = t.sede_id
         WHERE {$whereStr}
-        ORDER BY
-            FIELD(t.prioridad,'Critica','Alta','Media','Baja'),
-            t.sla_resolucion_limite ASC,
-            t.fecha_apertura DESC";
+        ORDER BY t.fecha_apertura DESC";
 
 $resultado = DB::paginate($sql, $params, $page, PER_PAGE);
 $tickets   = $resultado['data'];
@@ -166,16 +163,15 @@ foreach ($cards as $c): ?>
         <table>
             <thead>
                 <tr>
+                    <th style="width:100px">Fecha</th>
                     <th style="width:130px">Número</th>
                     <th>Título</th>
                     <th style="width:100px">Tipo</th>
                     <th style="width:90px">Prioridad</th>
                     <th style="width:110px">Estado</th>
-                    <th style="width:150px">Solicitante</th>
                     <th style="width:150px">Agente</th>
                     <th style="width:120px">SLA Resolución</th>
-                    <th style="width:80px">Apertura</th>
-                    <th style="width:50px"></th>
+                    <th style="width:80px">Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -198,6 +194,10 @@ foreach ($cards as $c): ?>
                 [$eBg, $eColor] = $estadoColors[$tk['estado']] ?? ['#F5F5F5','#475569'];
             ?>
             <tr style="<?= $cerrado ? 'opacity:.6' : '' ?>">
+                <td style="font-size:12px;color:#475569;white-space:nowrap;">
+                    <div style="font-weight:600;"><?= date('d/m/Y', strtotime($tk['fecha_apertura'])) ?></div>
+                    <div style="font-size:10px;color:#94A3B8;"><?= date('H:i', strtotime($tk['fecha_apertura'])) ?></div>
+                </td>
                 <td>
                     <a href="ticket_detalle.php?id=<?= $tk['id'] ?>" class="mono"
                        style="color:#1565C0;font-weight:600;text-decoration:none;font-size:12px;">
@@ -231,16 +231,6 @@ foreach ($cards as $c): ?>
                     </span>
                 </td>
                 <td>
-                    <?php if ($tk['solicitante_nombre']): ?>
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <span style="width:24px;height:24px;border-radius:50%;background:#4A90C4;color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                            <?= strtoupper(substr($tk['solicitante_nombre'],0,2)) ?>
-                        </span>
-                        <span style="font-size:12px;"><?= h(truncate($tk['solicitante_nombre'],18)) ?></span>
-                    </div>
-                    <?php else: ?><span style="color:#94A3B8">—</span><?php endif; ?>
-                </td>
-                <td>
                     <?php if ($tk['agente_nombre']): ?>
                     <div style="display:flex;align-items:center;gap:6px;">
                         <span style="width:24px;height:24px;border-radius:50%;background:#00695C;color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
@@ -262,35 +252,25 @@ foreach ($cards as $c): ?>
                     <?php endif; ?>
                     <?php else: ?><span style="color:#94A3B8;">—</span><?php endif; ?>
                 </td>
-                <td style="font-size:11px;color:#94A3B8;">
-                    <?= date('d/m/y', strtotime($tk['fecha_apertura'])) ?><br>
-                    <?= date('H:i', strtotime($tk['fecha_apertura'])) ?>
-                </td>
                 <td>
-                    <div style="position:relative;" x-data="{ open: false }">
-                        <button onclick="toggleMenu(this)" class="btn btn-ghost btn-sm btn-icon">
-                            <i class="fa-solid fa-ellipsis-vertical"></i>
-                        </button>
-                        <div class="tk-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:white;border:1px solid #E2E8F0;border-radius:10px;padding:6px;min-width:170px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:50;">
-                            <a href="ticket_detalle.php?id=<?= $tk['id'] ?>" class="tk-menu-item">
-                                <i class="fa-solid fa-eye" style="color:#1565C0;width:16px;"></i> Ver detalle
-                            </a>
-                            <a href="ticket_form.php?id=<?= $tk['id'] ?>" class="tk-menu-item">
-                                <i class="fa-solid fa-pen" style="color:#F9A825;width:16px;"></i> Editar
-                            </a>
-                            <?php if (!$cerrado): ?>
-                            <hr style="margin:4px 0;border-color:#F1F5F9;">
-                            <form method="post" action="ticket_action.php"
-                                  onsubmit="return confirm('¿Cerrar este ticket?')">
-                                <?= Auth::csrfInput() ?>
-                                <input type="hidden" name="action" value="cerrar">
-                                <input type="hidden" name="id" value="<?= $tk['id'] ?>">
-                                <button type="submit" class="tk-menu-item" style="width:100%;background:none;border:none;color:#EF5350;cursor:pointer;text-align:left;">
-                                    <i class="fa-solid fa-circle-xmark" style="width:16px;"></i> Cerrar ticket
-                                </button>
-                            </form>
-                            <?php endif; ?>
-                        </div>
+                    <div style="display:flex;gap:4px;align-items:center;">
+                        <a href="ticket_detalle.php?id=<?= $tk['id'] ?>" class="btn btn-ghost btn-sm btn-icon" title="Ver detalle">
+                            <i class="fa-solid fa-eye" style="color:#1565C0;"></i>
+                        </a>
+                        <a href="ticket_form.php?id=<?= $tk['id'] ?>" class="btn btn-ghost btn-sm btn-icon" title="Editar">
+                            <i class="fa-solid fa-pen" style="color:#F9A825;"></i>
+                        </a>
+                        <?php if (!$cerrado): ?>
+                        <form method="post" action="ticket_action.php" style="display:inline;"
+                              onsubmit="return confirm('¿Cerrar este ticket?')">
+                            <?= Auth::csrfInput() ?>
+                            <input type="hidden" name="action" value="cerrar">
+                            <input type="hidden" name="id" value="<?= $tk['id'] ?>">
+                            <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Cerrar ticket">
+                                <i class="fa-solid fa-circle-xmark" style="color:#EF5350;"></i>
+                            </button>
+                        </form>
+                        <?php endif; ?>
                     </div>
                 </td>
             </tr>
@@ -310,28 +290,6 @@ foreach ($cards as $c): ?>
     <?php endif; ?>
 </div>
 
-<style>
-.tk-menu-item {
-    display: flex; align-items: center; gap: 8px;
-    padding: 7px 10px; border-radius: 7px;
-    font-size: 13px; color: #475569; text-decoration: none;
-    transition: background .1s;
-}
-.tk-menu-item:hover { background: #F8FAFC; color: #1E293B; }
-</style>
-<script>
-function toggleMenu(btn) {
-    const menu = btn.nextElementSibling;
-    const allMenus = document.querySelectorAll('.tk-menu');
-    allMenus.forEach(m => { if (m !== menu) m.style.display = 'none'; });
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-}
-document.addEventListener('click', e => {
-    if (!e.target.closest('[onclick="toggleMenu(this)"]') && !e.target.closest('.tk-menu')) {
-        document.querySelectorAll('.tk-menu').forEach(m => m.style.display = 'none');
-    }
-});
-</script>
 
 <?php
 $pageContent = ob_get_clean();
