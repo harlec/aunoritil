@@ -124,7 +124,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($accion, ['preview','impor
 
     $archivo    = $_FILES['csv']['tmp_name'] ?? '';
     $fileError  = $_FILES['csv']['error'] ?? UPLOAD_ERR_NO_FILE;
-    // Si es importar con datos en POST (segunda pasada)
+    $csvPegado  = trim($_POST['csv_texto'] ?? '');
+    // Segunda pasada (confirmar importación)
     $usarPost = ($accion === 'importar' && empty($archivo) && !empty($_POST['csv_data']));
 
     if ($usarPost) {
@@ -132,17 +133,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($accion, ['preview','impor
     } elseif ($archivo && is_uploaded_file($archivo)) {
         $contenido = file_get_contents($archivo);
         $lineas = explode("\n", $contenido);
+    } elseif ($csvPegado !== '') {
+        // Método alternativo: texto pegado directamente
+        $lineas = explode("\n", $csvPegado);
     } else {
-        $mensajesError = [
-            UPLOAD_ERR_INI_SIZE   => 'El archivo supera upload_max_filesize en php.ini.',
-            UPLOAD_ERR_FORM_SIZE  => 'El archivo supera MAX_FILE_SIZE del formulario.',
-            UPLOAD_ERR_PARTIAL    => 'El archivo se subió parcialmente.',
-            UPLOAD_ERR_NO_FILE    => 'No se seleccionó ningún archivo.',
-            UPLOAD_ERR_NO_TMP_DIR => 'Falta la carpeta temporal del servidor.',
-            UPLOAD_ERR_CANT_WRITE => 'No se pudo escribir en disco.',
-        ];
-        $msg = $mensajesError[$fileError] ?? "Error de subida (código {$fileError}).";
-        flash('error', $msg);
+        flash('error', 'Sube un archivo CSV o pega el contenido en el área de texto.');
         redirect(BASE_URL . '/modules/admin/import_tickets.php');
     }
 
@@ -286,20 +281,41 @@ ob_start();
         <div class="card-header">
             <span class="card-title">
                 <i class="fa-solid fa-upload" style="color:#1565C0;margin-right:8px;"></i>
-                Cargar archivo CSV
+                Cargar datos CSV
             </span>
         </div>
         <div class="card-body">
             <form method="post" enctype="multipart/form-data">
                 <?= Auth::csrfInput() ?>
                 <input type="hidden" name="accion" value="preview">
+
+                <!-- Opción 1: subir archivo -->
                 <div class="form-group">
-                    <label class="form-label">Archivo CSV <span class="req">*</span></label>
-                    <input type="file" name="csv" accept=".csv,.txt" class="form-control" required>
+                    <label class="form-label">Opción 1 — Subir archivo</label>
+                    <input type="file" name="csv" accept=".csv,.txt" class="form-control">
                     <div style="font-size:11px;color:#94A3B8;margin-top:4px;">
                         Exporta el Excel como CSV (delimitado por punto y coma)
                     </div>
                 </div>
+
+                <!-- Separador -->
+                <div style="display:flex;align-items:center;gap:8px;margin:12px 0;">
+                    <hr style="flex:1;border:none;border-top:1px solid #E2E8F0;">
+                    <span style="font-size:11px;color:#94A3B8;white-space:nowrap;">O bien</span>
+                    <hr style="flex:1;border:none;border-top:1px solid #E2E8F0;">
+                </div>
+
+                <!-- Opción 2: pegar texto -->
+                <div class="form-group">
+                    <label class="form-label">Opción 2 — Pegar contenido</label>
+                    <textarea name="csv_texto" class="form-control" rows="6"
+                              placeholder="Copia todo el contenido del CSV y pégalo aquí..."
+                              style="font-family:monospace;font-size:11px;resize:vertical;"></textarea>
+                    <div style="font-size:11px;color:#94A3B8;margin-top:4px;">
+                        Abre el CSV con el Bloc de notas, selecciona todo (Ctrl+A) y copia (Ctrl+C)
+                    </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary" style="width:100%;">
                     <i class="fa-solid fa-eye"></i> Vista previa
                 </button>
