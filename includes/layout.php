@@ -122,6 +122,7 @@ $nav = [
             ['label'=>'Grupos Soporte',  'url'=> BASE_URL.'/modules/admin/grupos.php',        'icon'=>'fa-people-group'],
             ['label'=>'Configuración',   'url'=> BASE_URL.'/modules/admin/configuracion.php', 'icon'=>'fa-sliders'],
             ['label'=>'Auditoría',       'url'=> BASE_URL.'/modules/admin/auditoria.php',     'icon'=>'fa-clock-rotate-left'],
+            ['label'=>'Importar CSV',    'url'=> BASE_URL.'/modules/admin/import_tickets.php', 'icon'=>'fa-file-csv'],
         ],
     ],
 ];
