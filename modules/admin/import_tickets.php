@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../../config.php';
-Auth::requireLogin();
-Auth::requireAdmin();
+Auth::requireLogin('admin');
 
 $pageTitle  = 'Importar Tickets desde CSV';
 $pageModule = 'admin';
