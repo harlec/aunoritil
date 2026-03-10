@@ -122,7 +122,8 @@ $accion   = $_POST['accion'] ?? '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($accion, ['preview','importar'])) {
     Auth::verifyCsrf();
 
-    $archivo = $_FILES['csv']['tmp_name'] ?? '';
+    $archivo    = $_FILES['csv']['tmp_name'] ?? '';
+    $fileError  = $_FILES['csv']['error'] ?? UPLOAD_ERR_NO_FILE;
     // Si es importar con datos en POST (segunda pasada)
     $usarPost = ($accion === 'importar' && empty($archivo) && !empty($_POST['csv_data']));
 
@@ -132,7 +133,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($accion, ['preview','impor
         $contenido = file_get_contents($archivo);
         $lineas = explode("\n", $contenido);
     } else {
-        flash('error', 'No se subió ningún archivo.');
+        $mensajesError = [
+            UPLOAD_ERR_INI_SIZE   => 'El archivo supera upload_max_filesize en php.ini.',
+            UPLOAD_ERR_FORM_SIZE  => 'El archivo supera MAX_FILE_SIZE del formulario.',
+            UPLOAD_ERR_PARTIAL    => 'El archivo se subió parcialmente.',
+            UPLOAD_ERR_NO_FILE    => 'No se seleccionó ningún archivo.',
+            UPLOAD_ERR_NO_TMP_DIR => 'Falta la carpeta temporal del servidor.',
+            UPLOAD_ERR_CANT_WRITE => 'No se pudo escribir en disco.',
+        ];
+        $msg = $mensajesError[$fileError] ?? "Error de subida (código {$fileError}).";
+        flash('error', $msg);
         redirect(BASE_URL . '/modules/admin/import_tickets.php');
     }
 
