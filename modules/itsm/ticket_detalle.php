@@ -36,22 +36,17 @@ if (!$tk) { flash('error','Ticket no encontrado'); redirect(BASE_URL.'/modules/i
 $pageTitle  = 'Ticket — ' . $tk['numero'];
 $pageModule = 'tickets';
 
-// Determinar si el usuario es agente/admin
 $esAgente = Auth::isAgent();
 
-// ── Comentarios ───────────────────────────────────────────────
 $sqlComentarios = $esAgente
     ? "SELECT c.*, u.nombre AS autor_nombre FROM itsm_comentarios c LEFT JOIN adm_usuarios u ON u.id = c.usuario_id WHERE c.ticket_id = ? ORDER BY c.created_at ASC"
     : "SELECT c.*, u.nombre AS autor_nombre FROM itsm_comentarios c LEFT JOIN adm_usuarios u ON u.id = c.usuario_id WHERE c.ticket_id = ? AND c.tipo != 'Interno' ORDER BY c.created_at ASC";
 $comentarios = DB::query($sqlComentarios, [$id]);
 
-// ── Adjuntos ──────────────────────────────────────────────────
 $adjuntos = DB::query(
-    "SELECT * FROM itsm_adjuntos WHERE entidad_tipo='ticket' AND entidad_id=? ORDER BY created_at",
-    [$id]
+    "SELECT * FROM itsm_adjuntos WHERE entidad_tipo='ticket' AND entidad_id=? ORDER BY created_at", [$id]
 ) ?: [];
 
-// ── Tickets relacionados ──────────────────────────────────────
 $relacionados = [];
 if (!empty($tk['ticket_padre_id'])) {
     $rel = DB::row("SELECT id, numero, titulo, estado FROM itsm_tickets WHERE id=?", [$tk['ticket_padre_id']]);
@@ -59,12 +54,11 @@ if (!empty($tk['ticket_padre_id'])) {
 }
 $hijos = DB::query("SELECT id, numero, titulo, estado FROM itsm_tickets WHERE ticket_padre_id=?", [$id]) ?: [];
 
-// ── POST: agregar comentario ──────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && postClean('action') === 'comentar') {
     Auth::verifyCsrf();
     $contenido = postClean('contenido');
-    $tipo      = ($esAgente && in_array(postClean('tipo_comentario'), ['Publico','Interno','Sistema']))
-                 ? postClean('tipo_comentario') : 'Publico';
+    $tipo = ($esAgente && in_array(postClean('tipo_comentario'), ['Publico','Interno','Sistema']))
+            ? postClean('tipo_comentario') : 'Publico';
     if ($contenido) {
         DB::insertRow('itsm_comentarios', [
             'ticket_id'  => $id,
@@ -84,7 +78,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && postClean('action') === 'comentar')
     redirect(BASE_URL . "/modules/itsm/ticket_detalle.php?id={$id}#comentarios");
 }
 
-// ── POST: cambio rapido ───────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && postClean('action') === 'cambio_rapido') {
     Auth::verifyCsrf();
     $cambios     = [];
@@ -98,12 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && postClean('action') === 'cambio_rap
     } elseif ($nuevoAgente === 0 && postClean('agente_id') === '0') {
         $cambios['agente_id'] = null;
     }
-
     if (in_array($nuevoEstado, ['Resuelto','Cerrado']) && !$tk['fecha_resolucion']) {
         $cambios['fecha_resolucion']        = date('Y-m-d H:i:s');
         $cambios['sla_resolucion_cumplido'] = ($tk['sla_resolucion_limite'] && strtotime($tk['sla_resolucion_limite']) >= time()) ? 1 : 0;
     }
-
     if ($cambios) {
         DB::updateRow('itsm_tickets', $cambios, 'id = ?', [$id]);
         Audit::log('itsm_tickets', $id, 'EDITAR', null, null, "Cambio rapido en {$tk['numero']}");
@@ -111,102 +102,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && postClean('action') === 'cambio_rap
     redirect(BASE_URL . "/modules/itsm/ticket_detalle.php?id={$id}");
 }
 
-// ── Utilidades de display ─────────────────────────────────────
 $priorColor = ITIL::colorPrioridad($tk['prioridad']);
 $slaResp    = ITIL::estadoSLA($tk['sla_respuesta_limite'],  $tk['sla_respuesta_cumplido']  !== null ? (int)$tk['sla_respuesta_cumplido']  : null);
 $slaResol   = ITIL::estadoSLA($tk['sla_resolucion_limite'], $tk['sla_resolucion_cumplido'] !== null ? (int)$tk['sla_resolucion_cumplido'] : null);
 
 $estadoColors = [
-    'Nuevo'      => ['bg'=>'#E3F2FD','color'=>'#1565C0'],
-    'Asignado'   => ['bg'=>'#E0F7FA','color'=>'#00838F'],
-    'En_proceso' => ['bg'=>'#FFF8E1','color'=>'#F9A825'],
-    'En_espera'  => ['bg'=>'#ECEFF1','color'=>'#546E7A'],
-    'Resuelto'   => ['bg'=>'#E8F5E9','color'=>'#2E7D32'],
-    'Cerrado'    => ['bg'=>'#212121','color'=>'#FFFFFF'],
-    'Cancelado'  => ['bg'=>'#FFEBEE','color'=>'#C62828'],
+    'Nuevo'      => ['#E3F2FD','#1565C0'],
+    'Asignado'   => ['#E0F7FA','#00838F'],
+    'En_proceso' => ['#FFF8E1','#F9A825'],
+    'En_espera'  => ['#ECEFF1','#546E7A'],
+    'Resuelto'   => ['#E8F5E9','#2E7D32'],
+    'Cerrado'    => ['#212121','#FFFFFF'],
+    'Cancelado'  => ['#FFEBEE','#C62828'],
 ];
-$sc = $estadoColors[$tk['estado']] ?? ['bg'=>'#E0E0E0','color'=>'#333'];
+[$eBg, $eColor] = $estadoColors[$tk['estado']] ?? ['#E0E0E0','#333'];
 
-$agentes = DB::query("SELECT id, nombre FROM adm_usuarios WHERE activo=1 ORDER BY nombre");
+$cerrado  = in_array($tk['estado'], ['Cerrado','Cancelado']);
+$agentes  = DB::query("SELECT id, nombre FROM adm_usuarios WHERE activo=1 ORDER BY nombre");
 
 ob_start();
 ?>
-<nav aria-label="breadcrumb" class="mb-2">
-    <ol class="breadcrumb small mb-0">
-        <li class="breadcrumb-item"><a href="tickets.php" class="text-decoration-none">Tickets</a></li>
-        <li class="breadcrumb-item active"><?= h($tk['numero']) ?></li>
-    </ol>
-</nav>
+<!-- Breadcrumb -->
+<div style="font-size:12px;color:#94A3B8;margin-bottom:12px;">
+    <a href="tickets.php" style="color:#94A3B8;text-decoration:none;">Tickets</a>
+    <i class="fa-solid fa-chevron-right" style="font-size:10px;margin:0 6px;"></i>
+    <span><?= h($tk['numero']) ?></span>
+</div>
 
-<!-- Encabezado -->
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-4">
-    <div>
-        <h5 class="mb-1 fw-bold" style="color:#1A3A5C">
-            <span class="me-2 font-monospace" style="color:#1565C0"><?= h($tk['numero']) ?></span>
+<!-- Encabezado del ticket -->
+<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+    <div style="flex:1;min-width:0;">
+        <h1 class="page-title" style="margin-bottom:10px;">
+            <span class="mono" style="color:#1565C0;margin-right:10px;"><?= h($tk['numero']) ?></span>
             <?= h($tk['titulo']) ?>
-        </h5>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-            <span class="badge px-3 py-2 rounded-pill fw-semibold" style="background:<?= $sc['bg'] ?>;color:<?= $sc['color'] ?>">
+        </h1>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <span class="badge" style="background:<?= $eBg ?>;color:<?= $eColor ?>;border:1px solid <?= $eColor ?>33;font-size:12px;padding:5px 12px;">
                 <?= str_replace('_',' ',$tk['estado']) ?>
             </span>
-            <span class="badge bg-light text-dark border"><?= $tk['tipo'] ?></span>
-            <span class="badge" style="background:<?= $priorColor ?>22;color:<?= $priorColor ?>;border:1px solid <?= $priorColor ?>">
+            <span class="badge" style="background:#F1F5F9;color:#475569;border:1px solid #E2E8F0;">
+                <?= $tk['tipo'] ?>
+            </span>
+            <span class="badge" style="background:<?= $priorColor ?>22;color:<?= $priorColor ?>;border:1px solid <?= $priorColor ?>44;">
                 <?= $tk['prioridad'] ?>
             </span>
             <?php if ($tk['categoria_nombre']): ?>
-            <span class="badge" style="background:<?= $tk['categoria_color'] ?>22;color:<?= $tk['categoria_color'] ?>">
-                <i class="fa-solid <?= $tk['categoria_icono'] ?> me-1"></i><?= h($tk['categoria_nombre']) ?>
+            <span class="badge" style="background:<?= $tk['categoria_color'] ?>22;color:<?= $tk['categoria_color'] ?>;border:1px solid <?= $tk['categoria_color'] ?>44;">
+                <?php if ($tk['categoria_icono']): ?><i class="fa-solid <?= $tk['categoria_icono'] ?>" style="margin-right:4px;"></i><?php endif; ?>
+                <?= h($tk['categoria_nombre']) ?>
             </span>
             <?php endif; ?>
         </div>
     </div>
-    <div class="d-flex gap-2">
-        <?php if (!in_array($tk['estado'],['Cerrado','Cancelado'])): ?>
-        <a href="ticket_form.php?id=<?= $id ?>" class="btn btn-sm btn-warning">
-            <i class="fa-solid fa-pen me-1"></i>Editar
+    <div style="display:flex;gap:8px;flex-shrink:0;">
+        <?php if (!$cerrado): ?>
+        <a href="ticket_form.php?id=<?= $id ?>" class="btn btn-sm" style="background:#FFF8E1;color:#F9A825;border:1px solid #FFE082;">
+            <i class="fa-solid fa-pen"></i> Editar
         </a>
         <?php endif; ?>
-        <a href="tickets.php" class="btn btn-sm btn-outline-secondary">
-            <i class="fa-solid fa-arrow-left me-1"></i>Volver
+        <a href="tickets.php" class="btn btn-ghost btn-sm">
+            <i class="fa-solid fa-arrow-left"></i> Volver
         </a>
     </div>
 </div>
 
-<div class="row g-4">
-    <!-- Columna principal -->
-    <div class="col-12 col-lg-8">
+<!-- Layout principal -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start;">
 
-        <!-- Descripcion -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-align-left me-2 text-primary"></i>Descripcion
+    <!-- Columna principal -->
+    <div>
+        <!-- Descripción -->
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-align-left" style="color:#1565C0;margin-right:8px;"></i>
+                    Descripción
                 </span>
             </div>
-            <div class="card-body p-3">
-                <div class="bg-light rounded-3 p-3" style="white-space:pre-wrap;font-size:0.9em"><?= nl2br(h($tk['descripcion'])) ?></div>
+            <div class="card-body">
+                <div style="background:#F8FAFC;border-radius:8px;padding:16px;white-space:pre-wrap;font-size:13px;line-height:1.6;">
+                    <?= nl2br(h($tk['descripcion'])) ?>
+                </div>
             </div>
         </div>
 
-        <!-- Resolucion -->
+        <!-- Resolución -->
         <?php if ($tk['workaround'] || $tk['solucion']): ?>
-        <div class="card border-0 shadow-sm mb-4" style="border-left:4px solid #2E7D32 !important;">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small text-success">
-                    <i class="fa-solid fa-circle-check me-2"></i>Resolucion
+        <div class="card" style="margin-bottom:20px;border-left:3px solid #2E7D32;">
+            <div class="card-header">
+                <span class="card-title" style="color:#2E7D32;">
+                    <i class="fa-solid fa-circle-check" style="margin-right:8px;"></i>Resolución
                 </span>
             </div>
-            <div class="card-body p-3">
+            <div class="card-body">
                 <?php if ($tk['workaround']): ?>
-                <div class="mb-3">
-                    <div class="small fw-semibold text-muted mb-1">Workaround:</div>
-                    <div class="bg-light rounded-3 p-2" style="white-space:pre-wrap;font-size:0.85em"><?= nl2br(h($tk['workaround'])) ?></div>
+                <div style="margin-bottom:14px;">
+                    <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Workaround</div>
+                    <div style="background:#F8FAFC;border-radius:8px;padding:12px;white-space:pre-wrap;font-size:13px;"><?= nl2br(h($tk['workaround'])) ?></div>
                 </div>
                 <?php endif; ?>
                 <?php if ($tk['solucion']): ?>
                 <div>
-                    <div class="small fw-semibold text-muted mb-1">Solucion definitiva:</div>
-                    <div class="bg-success bg-opacity-10 rounded-3 p-2" style="white-space:pre-wrap;font-size:0.85em"><?= nl2br(h($tk['solucion'])) ?></div>
+                    <div style="font-size:11px;font-weight:700;color:#94A3B8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Solución definitiva</div>
+                    <div style="background:#E8F5E9;border-radius:8px;padding:12px;white-space:pre-wrap;font-size:13px;"><?= nl2br(h($tk['solucion'])) ?></div>
                 </div>
                 <?php endif; ?>
             </div>
@@ -215,68 +213,70 @@ ob_start();
 
         <!-- Adjuntos -->
         <?php if (!empty($adjuntos)): ?>
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-paperclip me-2"></i>Adjuntos (<?= count($adjuntos) ?>)
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-paperclip" style="margin-right:8px;"></i>
+                    Adjuntos (<?= count($adjuntos) ?>)
                 </span>
             </div>
-            <div class="card-body p-3 d-flex flex-wrap gap-2">
+            <div class="card-body" style="display:flex;flex-wrap:wrap;gap:8px;">
                 <?php foreach ($adjuntos as $adj): ?>
-                <a href="<?= BASE_URL ?>/<?= h($adj['ruta_archivo']) ?>" target="_blank" class="btn btn-outline-secondary btn-sm">
-                    <i class="fa-solid fa-file me-1"></i>
+                <a href="<?= BASE_URL ?>/<?= h($adj['ruta_archivo']) ?>" target="_blank"
+                   class="btn btn-ghost btn-sm">
+                    <i class="fa-solid fa-file"></i>
                     <?= h(truncate($adj['nombre_original'], 30)) ?>
-                    <span class="text-muted ms-1" style="font-size:0.75em">(<?= formatBytes((int)($adj['tamano_bytes'] ?? 0)) ?>)</span>
+                    <span style="font-size:11px;color:#94A3B8;margin-left:4px;">(<?= formatBytes((int)($adj['tamano_bytes'] ?? 0)) ?>)</span>
                 </a>
                 <?php endforeach; ?>
             </div>
         </div>
         <?php endif; ?>
 
-        <!-- Timeline de comentarios -->
-        <div class="card border-0 shadow-sm mb-4" id="comentarios">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-comments me-2 text-primary"></i>
+        <!-- Timeline comentarios -->
+        <div class="card" id="comentarios">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-comments" style="color:#1565C0;margin-right:8px;"></i>
                     Historial
-                    <span class="badge bg-secondary ms-1"><?= count($comentarios) ?></span>
+                    <span class="badge" style="background:#E8EAF6;color:#1565C0;border:1px solid #c5cae9;margin-left:6px;"><?= count($comentarios) ?></span>
                 </span>
             </div>
-            <div class="card-body p-3">
+            <div class="card-body">
                 <?php if (empty($comentarios)): ?>
-                <div class="text-center text-muted py-4 small">
-                    <i class="fa-regular fa-comment-dots fa-2x mb-2 d-block opacity-25"></i>
-                    Aun no hay comentarios en este ticket.
+                <div class="empty-state">
+                    <i class="fa-regular fa-comment-dots"></i>
+                    <p>Aún no hay comentarios en este ticket.</p>
                 </div>
                 <?php else: ?>
-                <?php foreach ($comentarios as $com): ?>
-                <?php
+                <?php foreach ($comentarios as $com):
                     $esInterno = $com['tipo'] === 'Interno';
                     $esSistema = $com['tipo'] === 'Sistema';
                     $iniciales = strtoupper(substr($com['autor_nombre'] ?? 'S', 0, 2));
                     $bgAvatar  = $esSistema ? '#94A3B8' : ($esInterno ? '#6A1B9A' : '#1565C0');
                 ?>
-                <div class="d-flex gap-3 mb-3 <?= $esInterno ? 'opacity-75' : '' ?>">
-                    <div class="flex-shrink-0 rounded-circle d-flex align-items-center justify-content-center text-white fw-bold"
-                         style="width:36px;height:36px;font-size:0.7em;background:<?= $bgAvatar ?>;min-width:36px">
-                        <?= $esSistema ? '<i class="fa-solid fa-robot" style="font-size:0.8em"></i>' : $iniciales ?>
+                <div style="display:flex;gap:12px;margin-bottom:16px;<?= $esInterno ? 'opacity:.8' : '' ?>">
+                    <div style="width:36px;height:36px;border-radius:50%;background:<?= $bgAvatar ?>;color:white;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <?= $esSistema ? '<i class="fa-solid fa-robot" style="font-size:12px;"></i>' : $iniciales ?>
                     </div>
-                    <div class="flex-grow-1">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <span class="fw-semibold small"><?= h($com['autor_nombre'] ?? 'Sistema') ?></span>
-                            <div class="d-flex align-items-center gap-2">
+                    <div style="flex:1;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                            <span style="font-weight:600;font-size:13px;"><?= h($com['autor_nombre'] ?? 'Sistema') ?></span>
+                            <div style="display:flex;align-items:center;gap:8px;">
                                 <?php if ($esInterno): ?>
-                                <span class="badge" style="background:#F3E5F5;color:#6A1B9A;border:1px solid #6A1B9A;font-size:0.65em">
-                                    <i class="fa-solid fa-lock me-1"></i>Interno
+                                <span class="badge" style="background:#F3E5F5;color:#6A1B9A;border:1px solid #6A1B9A44;font-size:10px;">
+                                    <i class="fa-solid fa-lock" style="margin-right:3px;"></i>Interno
                                 </span>
                                 <?php endif; ?>
-                                <span class="text-muted" style="font-size:0.75em">
+                                <span style="font-size:11px;color:#94A3B8;">
                                     <?= date('d/m/Y H:i', strtotime($com['created_at'])) ?>
                                 </span>
                             </div>
                         </div>
-                        <div class="rounded-3 p-3"
-                             style="<?= $esInterno ? 'background:#F3E5F5;border-left:3px solid #6A1B9A' : ($esSistema ? 'background:#F5F5F5' : 'background:#EFF6FF') ?>;font-size:0.9em;white-space:pre-wrap">
+                        <div style="border-radius:10px;padding:12px;font-size:13px;white-space:pre-wrap;<?=
+                            $esInterno ? 'background:#F3E5F5;border-left:3px solid #6A1B9A;' :
+                            ($esSistema ? 'background:#F5F5F5;' : 'background:#EFF6FF;')
+                        ?>">
                             <?= nl2br(h($com['contenido'])) ?>
                         </div>
                     </div>
@@ -284,32 +284,29 @@ ob_start();
                 <?php endforeach; ?>
                 <?php endif; ?>
 
-                <?php if (!in_array($tk['estado'],['Cerrado','Cancelado'])): ?>
-                <hr class="my-3">
+                <?php if (!$cerrado): ?>
+                <hr style="border:none;border-top:1px solid #F1F5F9;margin:16px 0;">
                 <form method="post">
                     <?= Auth::csrfInput() ?>
                     <input type="hidden" name="action" value="comentar">
                     <?php if ($esAgente): ?>
-                    <div class="d-flex gap-3 mb-2">
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="radio" name="tipo_comentario" id="tipoPub" value="Publico" checked>
-                            <label class="form-check-label small" for="tipoPub">
-                                <i class="fa-solid fa-globe me-1 text-primary"></i>Publico
-                            </label>
-                        </div>
-                        <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="radio" name="tipo_comentario" id="tipoInt" value="Interno">
-                            <label class="form-check-label small" for="tipoInt">
-                                <i class="fa-solid fa-lock me-1 text-secondary"></i>Nota interna
-                            </label>
-                        </div>
+                    <div style="display:flex;gap:16px;margin-bottom:12px;">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                            <input type="radio" name="tipo_comentario" value="Publico" checked>
+                            <i class="fa-solid fa-globe" style="color:#1565C0;font-size:12px;"></i> Público
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                            <input type="radio" name="tipo_comentario" value="Interno">
+                            <i class="fa-solid fa-lock" style="color:#6A1B9A;font-size:12px;"></i> Nota interna
+                        </label>
                     </div>
                     <?php endif; ?>
-                    <textarea name="contenido" class="form-control form-control-sm mb-2" rows="3"
-                              placeholder="Escribe un comentario o actualizacion..." required></textarea>
-                    <div class="d-flex justify-content-end">
+                    <textarea name="contenido" class="form-control" rows="3"
+                              placeholder="Escribe un comentario o actualización..." required
+                              style="margin-bottom:10px;"></textarea>
+                    <div style="display:flex;justify-content:flex-end;">
                         <button type="submit" class="btn btn-primary btn-sm">
-                            <i class="fa-solid fa-paper-plane me-1"></i>Enviar comentario
+                            <i class="fa-solid fa-paper-plane"></i> Enviar comentario
                         </button>
                     </div>
                 </form>
@@ -319,71 +316,71 @@ ob_start();
     </div>
 
     <!-- Columna lateral -->
-    <div class="col-12 col-lg-4">
-
+    <div>
         <!-- SLA -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-clock me-2 text-warning"></i>SLA
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-clock" style="color:#F9A825;margin-right:8px;"></i>SLA
                 </span>
             </div>
-            <div class="card-body p-3">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="small fw-semibold">Primera respuesta</span>
-                        <span class="badge" style="background:<?= $slaResp['color'] ?>22;color:<?= $slaResp['color'] ?>;border:1px solid <?= $slaResp['color'] ?>">
-                            <i class="fa-solid <?= $slaResp['icon'] ?> me-1"></i><?= $slaResp['label'] ?>
+            <div class="card-body">
+                <div style="margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <span style="font-size:12px;font-weight:600;">Primera respuesta</span>
+                        <span class="badge" style="background:<?= $slaResp['color'] ?>22;color:<?= $slaResp['color'] ?>;border:1px solid <?= $slaResp['color'] ?>44;font-size:10px;">
+                            <i class="fa-solid <?= $slaResp['icon'] ?>" style="margin-right:3px;"></i><?= $slaResp['label'] ?>
                         </span>
                     </div>
                     <?php if ($tk['sla_respuesta_limite']): ?>
-                    <div class="text-muted" style="font-size:0.75em">Limite: <?= date('d/m/Y H:i', strtotime($tk['sla_respuesta_limite'])) ?></div>
+                    <div style="font-size:11px;color:#94A3B8;">Límite: <?= date('d/m/Y H:i', strtotime($tk['sla_respuesta_limite'])) ?></div>
                     <?php endif; ?>
                     <?php if ($tk['fecha_primer_respuesta']): ?>
-                    <div class="text-success" style="font-size:0.75em"><i class="fa-solid fa-check me-1"></i>Respondido: <?= date('d/m/Y H:i', strtotime($tk['fecha_primer_respuesta'])) ?></div>
+                    <div style="font-size:11px;color:#2E7D32;"><i class="fa-solid fa-check" style="margin-right:3px;"></i>Respondido: <?= date('d/m/Y H:i', strtotime($tk['fecha_primer_respuesta'])) ?></div>
                     <?php endif; ?>
                 </div>
-                <hr class="my-2">
+                <hr style="border:none;border-top:1px solid #F1F5F9;margin:10px 0;">
                 <div>
-                    <div class="d-flex justify-content-between align-items-center mb-1">
-                        <span class="small fw-semibold">Resolucion</span>
-                        <span class="badge" style="background:<?= $slaResol['color'] ?>22;color:<?= $slaResol['color'] ?>;border:1px solid <?= $slaResol['color'] ?>">
-                            <i class="fa-solid <?= $slaResol['icon'] ?> me-1"></i><?= $slaResol['label'] ?>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                        <span style="font-size:12px;font-weight:600;">Resolución</span>
+                        <span class="badge" style="background:<?= $slaResol['color'] ?>22;color:<?= $slaResol['color'] ?>;border:1px solid <?= $slaResol['color'] ?>44;font-size:10px;">
+                            <i class="fa-solid <?= $slaResol['icon'] ?>" style="margin-right:3px;"></i><?= $slaResol['label'] ?>
                         </span>
                     </div>
                     <?php if ($tk['sla_resolucion_limite']): ?>
-                    <div class="text-muted" style="font-size:0.75em">Limite: <?= date('d/m/Y H:i', strtotime($tk['sla_resolucion_limite'])) ?></div>
+                    <div style="font-size:11px;color:#94A3B8;">Límite: <?= date('d/m/Y H:i', strtotime($tk['sla_resolucion_limite'])) ?></div>
                     <?php endif; ?>
                     <?php if ($tk['fecha_resolucion']): ?>
-                    <div class="text-success" style="font-size:0.75em"><i class="fa-solid fa-check me-1"></i>Resuelto: <?= date('d/m/Y H:i', strtotime($tk['fecha_resolucion'])) ?></div>
+                    <div style="font-size:11px;color:#2E7D32;"><i class="fa-solid fa-check" style="margin-right:3px;"></i>Resuelto: <?= date('d/m/Y H:i', strtotime($tk['fecha_resolucion'])) ?></div>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
 
-        <!-- Acciones rapidas (solo agentes) -->
-        <?php if (!in_array($tk['estado'],['Cerrado','Cancelado']) && $esAgente): ?>
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-sliders me-2 text-primary"></i>Acciones rapidas
+        <!-- Acciones rápidas -->
+        <?php if (!$cerrado && $esAgente): ?>
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-sliders" style="color:#1565C0;margin-right:8px;"></i>
+                    Acciones rápidas
                 </span>
             </div>
-            <div class="card-body p-3">
+            <div class="card-body">
                 <form method="post">
                     <?= Auth::csrfInput() ?>
                     <input type="hidden" name="action" value="cambio_rapido">
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Cambiar estado</label>
-                        <select name="estado" class="form-select form-select-sm">
+                    <div class="form-group">
+                        <label class="form-label">Cambiar estado</label>
+                        <select name="estado" class="form-control">
                             <?php foreach(['Nuevo','Asignado','En_proceso','En_espera','Resuelto','Cerrado','Cancelado'] as $e): ?>
                             <option value="<?= $e ?>" <?= $tk['estado']===$e?'selected':'' ?>><?= str_replace('_',' ',$e) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold">Reasignar agente</label>
-                        <select name="agente_id" class="form-select form-select-sm">
+                    <div class="form-group">
+                        <label class="form-label">Reasignar agente</label>
+                        <select name="agente_id" class="form-control">
                             <option value="0">— Sin asignar —</option>
                             <?php foreach ($agentes as $a): ?>
                             <option value="<?= $a['id'] ?>" <?= $tk['agente_id']==$a['id']?'selected':'' ?>>
@@ -392,8 +389,8 @@ ob_start();
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary btn-sm w-100">
-                        <i class="fa-solid fa-check me-1"></i>Aplicar cambios
+                    <button type="submit" class="btn btn-primary btn-sm" style="width:100%;">
+                        <i class="fa-solid fa-check"></i> Aplicar cambios
                     </button>
                 </form>
             </div>
@@ -401,13 +398,13 @@ ob_start();
         <?php endif; ?>
 
         <!-- Detalles -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-circle-info me-2"></i>Detalles
+        <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-circle-info" style="margin-right:8px;"></i>Detalles
                 </span>
             </div>
-            <div class="card-body p-3">
+            <div class="card-body">
                 <?php
                 $detalles = [
                     ['icon'=>'fa-user',         'label'=>'Solicitante', 'val'=>$tk['solicitante_nombre']],
@@ -422,36 +419,36 @@ ob_start();
                 ];
                 foreach ($detalles as $d):
                     if (!$d['val']) continue; ?>
-                <div class="d-flex gap-2 mb-2 align-items-start">
-                    <i class="fa-solid <?= $d['icon'] ?> text-muted mt-1" style="width:16px;font-size:0.8em"></i>
+                <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+                    <i class="fa-solid <?= $d['icon'] ?>" style="color:#94A3B8;font-size:12px;margin-top:3px;width:14px;flex-shrink:0;"></i>
                     <div>
-                        <div class="text-muted" style="font-size:0.7em;line-height:1"><?= $d['label'] ?></div>
-                        <div class="small fw-semibold"><?= h($d['val']) ?></div>
+                        <div style="font-size:10px;color:#94A3B8;text-transform:uppercase;letter-spacing:.04em;"><?= $d['label'] ?></div>
+                        <div style="font-size:13px;font-weight:500;color:#1E293B;"><?= h($d['val']) ?></div>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
         </div>
 
-        <!-- Tickets relacionados -->
+        <!-- Relacionados -->
         <?php if (!empty($relacionados) || !empty($hijos)): ?>
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-header bg-white border-bottom py-2 px-3">
-                <span class="fw-semibold small" style="color:#1A3A5C">
-                    <i class="fa-solid fa-diagram-project me-2"></i>Relacionados
+        <div class="card">
+            <div class="card-header">
+                <span class="card-title">
+                    <i class="fa-solid fa-diagram-project" style="margin-right:8px;"></i>Relacionados
                 </span>
             </div>
-            <div class="card-body p-3">
+            <div class="card-body">
                 <?php foreach (array_merge($relacionados, $hijos) as $rel): if (!$rel) continue; ?>
-                <a href="ticket_detalle.php?id=<?= $rel['id'] ?>" class="d-flex gap-2 text-decoration-none mb-2">
-                    <span class="font-monospace small" style="color:#1565C0"><?= h($rel['numero']) ?></span>
-                    <span class="text-dark small"><?= h(truncate($rel['titulo'], 40)) ?></span>
+                <a href="ticket_detalle.php?id=<?= $rel['id'] ?>"
+                   style="display:flex;gap:8px;text-decoration:none;margin-bottom:8px;align-items:center;">
+                    <span class="mono" style="color:#1565C0;font-size:12px;"><?= h($rel['numero']) ?></span>
+                    <span style="color:#334155;font-size:13px;"><?= h(truncate($rel['titulo'], 35)) ?></span>
                 </a>
                 <?php endforeach; ?>
             </div>
         </div>
         <?php endif; ?>
-
     </div>
 </div>
 
